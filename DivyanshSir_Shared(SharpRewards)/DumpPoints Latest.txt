@@ -1,0 +1,978 @@
+-----------------------------------------------------------Articel ------------------------------------------------
+DECLARE @StartDate DATETIME; 
+SET @StartDate = '2024-01-25 06:28:19.637';
+
+WITH AfterStart AS (
+    SELECT 
+        AuthorID, 
+        COUNT(1) AS AfterStartDateCount, 
+        MAX(CreatedDate) AS MaxAfterDate
+    FROM tblArticle_Detail  
+    WHERE PublishedDate >= @StartDate
+        AND IsDeleted = 0
+        AND Approved = 1
+        AND IsArticleActive = 1
+        AND ArticleType = 1
+		AND IsFinished = 1 
+		AND  MajorCategoryID = 1
+    GROUP BY AuthorID
+),
+BeforeStart AS (
+    SELECT 
+        AuthorID, 
+        COUNT(1) AS BeforeStartDateCount, 
+        MAX(CreatedDate) AS MaxBeforeDate
+    FROM tblArticle_Detail  
+    WHERE PublishedDate < @StartDate
+        AND IsDeleted = 0
+        AND Approved = 1
+        AND IsArticleActive = 1
+        AND ArticleType = 1
+		AND IsFinished = 1 
+		AND  MajorCategoryID = 1
+    GROUP BY AuthorID
+)
+
+INSERT INTO UserContributionPointsForRedeem(
+UserID,
+ContributionPoint,
+IsActive,
+LastActivityDate,
+ActiveContributionPoint
+)
+SELECT 
+    COALESCE(a.AuthorID, b.AuthorID) AS AuthorID,
+    	(ISNULL(b.BeforeStartDateCount, 0) * (SELECT Points FROM PointsAllocation WHERE ContributionType = 'Article')) AS PointsBeforeStartDate,
+    
+    CASE 
+        WHEN MAX(ISNULL(a.MaxAfterDate, b.MaxBeforeDate)) >= @StartDate THEN 1
+        ELSE 0
+    END AS IsActiveUser,
+	MAX(ISNULL(a.MaxAfterDate, b.MaxBeforeDate)) AS MaxCreatedDate,
+	(ISNULL(a.AfterStartDateCount, 0) * (SELECT Points FROM PointsAllocation WHERE ContributionType = 'Article')) AS PointsAfterStartDate
+	
+FROM AfterStart a
+FULL OUTER JOIN BeforeStart b ON a.AuthorID = b.AuthorID
+GROUP BY COALESCE(a.AuthorID, b.AuthorID), 
+         ISNULL(a.AfterStartDateCount, 0), 
+         ISNULL(b.BeforeStartDateCount, 0);
+------------------------------------------------------------Article Featured -------------------------------------------------------
+Go
+DECLARE @StartDate DATETIME; 
+SET @StartDate = '2024-01-25 06:28:19.637';
+
+-- CTE for articles published on or after the start date
+WITH AfterStart AS (
+    SELECT 
+        AuthorID, 
+        COUNT(1) AS AfterStartDateCount, 
+        MAX(CreatedDate) AS MaxAfterDate
+    FROM tblArticle_Detail  
+    WHERE PublishedDate >= @StartDate
+        AND IsDeleted = 0
+        AND Approved = 1
+        AND IsArticleActive = 1
+        AND ArticleType = 1
+		AND IsFinished = 1 
+		AND  MajorCategoryID = 1
+		AND IsFeatured = 1
+    GROUP BY AuthorID
+),
+-- CTE for articles published before the start date
+BeforeStart AS (
+    SELECT 
+        AuthorID, 
+        COUNT(1) AS BeforeStartDateCount, 
+        MAX(CreatedDate) AS MaxBeforeDate
+    FROM tblArticle_Detail  
+    WHERE PublishedDate < @StartDate
+        AND IsDeleted = 0
+        AND Approved = 1
+        AND IsArticleActive = 1
+        AND ArticleType = 1
+		AND IsFinished = 1 
+		AND  MajorCategoryID = 1
+		AND IsFeatured = 1
+    GROUP BY AuthorID
+)
+
+-- MERGE statement to insert or update into UserContributionPointsForRedeem
+MERGE INTO UserContributionPointsForRedeem AS Target
+USING (
+    SELECT 
+        COALESCE(a.AuthorID, b.AuthorID) AS AuthorID,
+        ISNULL(b.BeforeStartDateCount, 0) * (SELECT Points FROM PointsAllocation WHERE ContributionType = 'FeaturedArticle') AS PointsBeforeStartDate,
+        ISNULL(a.AfterStartDateCount, 0) * (SELECT Points FROM PointsAllocation WHERE ContributionType = 'FeaturedArticle') AS PointsAfterStartDate,
+        MAX(ISNULL(a.MaxAfterDate, b.MaxBeforeDate)) AS MaxCreatedDate,
+        CASE 
+            WHEN MAX(ISNULL(a.MaxAfterDate, b.MaxBeforeDate)) >= @StartDate THEN 1
+            ELSE 0
+        END AS IsActiveUser
+    FROM AfterStart a
+    FULL OUTER JOIN BeforeStart b ON a.AuthorID = b.AuthorID
+    GROUP BY COALESCE(a.AuthorID, b.AuthorID), 
+             ISNULL(a.AfterStartDateCount, 0), 
+             ISNULL(b.BeforeStartDateCount, 0)
+) AS Source
+ON Target.UserID = Source.AuthorID -- Match on UserID
+
+-- When a match is found, update the existing row
+WHEN MATCHED THEN 
+    UPDATE SET 
+        ContributionPoint = ContributionPoint + Source.PointsBeforeStartDate, -- Add points before the start date
+        ActiveContributionPoint = ActiveContributionPoint + Source.PointsAfterStartDate, -- Add points after the start date
+        LastActivityDate = CASE 
+                            WHEN Target.LastActivityDate > Source.MaxCreatedDate THEN Target.LastActivityDate
+                            ELSE Source.MaxCreatedDate
+                          END, -- Update the LastActivityDate if the source date is more recent
+        IsActive = CASE 
+                    WHEN Target.IsActive = 1 THEN Target.IsActive 
+                    ELSE Source.IsActiveUser
+                  END -- Keep IsActive as 1 if already active
+
+-- When no match is found, insert a new row
+WHEN NOT MATCHED THEN
+    INSERT (UserID, ContributionPoint, ActiveContributionPoint, IsActive, LastActivityDate)
+    VALUES (Source.AuthorID, 
+            Source.PointsBeforeStartDate, 
+            Source.PointsAfterStartDate, 
+            Source.IsActiveUser, 
+            Source.MaxCreatedDate);
+
+
+GO
+		 
+----------------------------------------------------Video--------------------------------------------------------------------
+
+DECLARE @StartDate DATETIME; 
+SET @StartDate = '2024-01-25 06:28:19.637';
+
+WITH AfterStart AS (
+    SELECT 
+        AuthorID, 
+        COUNT(1) AS AfterStartDateCount, 
+        MAX(CreatedDate) AS MaxAfterDate
+    FROM tblArticle_Detail  
+    WHERE PublishedDate >= @StartDate
+        AND IsDeleted = 0
+        AND Approved = 1
+        AND IsArticleActive = 1
+        AND ArticleType = 3
+		AND IsFinished = 1 
+		AND MajorCategoryID = 1
+    GROUP BY AuthorID
+),
+BeforeStart AS (
+    SELECT 
+        AuthorID, 
+        COUNT(1) AS BeforeStartDateCount, 
+        MAX(CreatedDate) AS MaxBeforeDate
+    FROM tblArticle_Detail  
+    WHERE PublishedDate < @StartDate
+        AND IsDeleted = 0
+        AND Approved = 1
+        AND IsArticleActive = 1
+        AND ArticleType = 3
+		AND IsFinished = 1 
+		AND MajorCategoryID = 1
+    GROUP BY AuthorID
+)
+
+-- Combining AfterStart and BeforeStart Data
+SELECT 
+    COALESCE(a.AuthorID, b.AuthorID) AS UserID,
+	(ISNULL(b.BeforeStartDateCount, 0) * (SELECT Points FROM PointsAllocation WHERE ContributionType = 'Video')) AS UserContributionPoint,
+    CASE 
+        WHEN MAX(ISNULL(a.MaxAfterDate, b.MaxBeforeDate)) >= @StartDate THEN 1
+        ELSE 0
+    END AS IsActiveUser,
+	MAX(ISNULL(a.MaxAfterDate, b.MaxBeforeDate)) AS UserLastActivityDate,
+	(ISNULL(a.AfterStartDateCount, 0) * (SELECT Points FROM PointsAllocation WHERE ContributionType = 'Video')) AS UserActiveContributionPoint
+	
+INTO #UserContributionData
+FROM AfterStart a
+FULL OUTER JOIN BeforeStart b ON a.AuthorID = b.AuthorID
+GROUP BY COALESCE(a.AuthorID, b.AuthorID), 
+         ISNULL(a.AfterStartDateCount, 0), 
+         ISNULL(b.BeforeStartDateCount, 0);
+
+-- Merge Statement
+MERGE UserContributionPointsForRedeem AS target
+USING #UserContributionData AS source
+ON target.UserID = source.UserID
+
+WHEN MATCHED THEN
+    UPDATE 
+    SET 
+        target.ContributionPoint = target.ContributionPoint + source.UserContributionPoint,
+        target.ActiveContributionPoint = target.ActiveContributionPoint + source.UserActiveContributionPoint,
+        target.LastActivityDate = CASE 
+                                    WHEN target.LastActivityDate > source.UserLastActivityDate THEN target.LastActivityDate 
+                                    ELSE source.UserLastActivityDate 
+                                  END,
+        target.IsActive = CASE 
+                            WHEN target.IsActive = 1 THEN target.IsActive
+                            ELSE source.IsActiveUser
+                          END
+
+WHEN NOT MATCHED BY TARGET THEN
+    INSERT (UserID, ContributionPoint, IsActive, LastActivityDate, ActiveContributionPoint)
+    VALUES (source.UserID, source.UserContributionPoint, source.IsActiveUser, source.UserLastActivityDate, source.UserActiveContributionPoint);
+
+-- Clean up
+DROP TABLE #UserContributionData;
+GO
+----------------------------------------------------------Video Featured -------------------------------------------------------------------
+
+DECLARE @StartDate DATETIME; 
+SET @StartDate = '2024-01-25 06:28:19.637';
+
+WITH AfterStart AS (
+    SELECT 
+        AuthorID, 
+        COUNT(1) AS AfterStartDateCount, 
+        MAX(CreatedDate) AS MaxAfterDate
+    FROM tblArticle_Detail  
+    WHERE PublishedDate >= @StartDate
+        AND IsDeleted = 0
+        AND Approved = 1
+        AND IsArticleActive = 1
+        AND ArticleType = 3
+		AND IsFinished = 1 
+		AND MajorCategoryID = 1
+		AND IsFeatured = 1
+    GROUP BY AuthorID
+),
+BeforeStart AS (
+    SELECT 
+        AuthorID, 
+        COUNT(1) AS BeforeStartDateCount, 
+        MAX(CreatedDate) AS MaxBeforeDate
+    FROM tblArticle_Detail  
+    WHERE PublishedDate < @StartDate
+        AND IsDeleted = 0
+        AND Approved = 1
+        AND IsArticleActive = 1
+        AND ArticleType = 3
+		AND IsFinished = 1 
+		AND MajorCategoryID = 1
+		AND IsFeatured = 1
+    GROUP BY AuthorID
+)
+
+-- Combining AfterStart and BeforeStart Data
+SELECT 
+    COALESCE(a.AuthorID, b.AuthorID) AS UserID,
+	(ISNULL(b.BeforeStartDateCount, 0) * (SELECT Points FROM PointsAllocation WHERE ContributionType = 'FeaturedVideo')) AS UserContributionPoint,
+    CASE 
+        WHEN MAX(ISNULL(a.MaxAfterDate, b.MaxBeforeDate)) >= @StartDate THEN 1
+        ELSE 0
+    END AS IsActiveUser,
+	MAX(ISNULL(a.MaxAfterDate, b.MaxBeforeDate)) AS UserLastActivityDate,
+	(ISNULL(a.AfterStartDateCount, 0) * (SELECT Points FROM PointsAllocation WHERE ContributionType = 'FeaturedVideo')) AS UserActiveContributionPoint
+	
+INTO #UserContributionData
+FROM AfterStart a
+FULL OUTER JOIN BeforeStart b ON a.AuthorID = b.AuthorID
+GROUP BY COALESCE(a.AuthorID, b.AuthorID), 
+         ISNULL(a.AfterStartDateCount, 0), 
+         ISNULL(b.BeforeStartDateCount, 0);
+
+-- Merge Statement
+MERGE UserContributionPointsForRedeem AS target
+USING #UserContributionData AS source
+ON target.UserID = source.UserID
+
+WHEN MATCHED THEN
+    UPDATE 
+    SET 
+        target.ContributionPoint = target.ContributionPoint + source.UserContributionPoint,
+        target.ActiveContributionPoint = target.ActiveContributionPoint + source.UserActiveContributionPoint,
+        target.LastActivityDate = CASE 
+                                    WHEN target.LastActivityDate > source.UserLastActivityDate THEN target.LastActivityDate 
+                                    ELSE source.UserLastActivityDate 
+                                  END,
+        target.IsActive = CASE 
+                            WHEN target.IsActive = 1 THEN target.IsActive
+                            ELSE source.IsActiveUser
+                          END
+
+WHEN NOT MATCHED BY TARGET THEN
+    INSERT (UserID, ContributionPoint, IsActive, LastActivityDate, ActiveContributionPoint)
+    VALUES (source.UserID, source.UserContributionPoint, source.IsActiveUser, source.UserLastActivityDate, source.UserActiveContributionPoint);
+
+-- Clean up
+DROP TABLE #UserContributionData;
+GO
+--------------------------------------------------------------Blog-------------------------------------------------------------------------------
+DECLARE @StartDate DATETIME;
+SET @StartDate = '2024-01-25 06:28:19.637';
+
+WITH AfterStart AS (
+    SELECT 
+        BloggerId, 
+        COUNT(1) AS AfterStartDateCount, 
+        MAX(PublishedDate) AS MaxAfterDate
+    FROM BlogDetail
+    WHERE PublishedDate >= @StartDate
+        AND IsActive = 1
+        AND IsDeleted = 0
+        AND Status = 2
+    GROUP BY BloggerId
+),
+BeforeStart AS (
+    SELECT 
+        BloggerId, 
+        COUNT(1) AS BeforeStartDateCount, 
+        MAX(PublishedDate) AS MaxBeforeDate
+    FROM BlogDetail
+    WHERE PublishedDate < @StartDate
+        AND IsActive = 1
+        AND IsDeleted = 0
+        AND Status = 2
+    GROUP BY BloggerId
+)
+-- Main query to get points and user data
+SELECT 
+    COALESCE(a.BloggerId, b.BloggerId) AS BloggerId,
+    (ISNULL(b.BeforeStartDateCount, 0) * (SELECT Points FROM PointsAllocation WHERE ContributionType = 'Blog')) AS PointsBeforeStartDate,
+    CASE 
+        WHEN MAX(ISNULL(a.MaxAfterDate, b.MaxBeforeDate)) >= @StartDate THEN 1
+        ELSE 0
+    END AS IsActiveUser,
+    MAX(ISNULL(a.MaxAfterDate, b.MaxBeforeDate)) AS MaxPublishedDate,
+    (ISNULL(a.AfterStartDateCount, 0) * (SELECT Points FROM PointsAllocation WHERE ContributionType = 'Blog')) AS PointsAfterStartDate
+INTO #TempUserPoints -- Storing the results into a temp table for use in the MERGE
+FROM AfterStart a
+FULL OUTER JOIN BeforeStart b ON a.BloggerId = b.BloggerId
+GROUP BY COALESCE(a.BloggerId, b.BloggerId),
+         ISNULL(a.AfterStartDateCount, 0),
+         ISNULL(b.BeforeStartDateCount, 0);
+
+-- Now using MERGE to handle insert or update
+MERGE INTO UserContributionPointsForRedeem AS Target
+USING #TempUserPoints AS Source
+ON Target.UserID = Source.BloggerId -- Matching UserIDs
+
+-- If a match is found, perform an update
+WHEN MATCHED THEN
+    UPDATE SET 
+        ContributionPoint = ContributionPoint + Source.PointsBeforeStartDate ,
+        ActiveContributionPoint = ActiveContributionPoint + Source.PointsAfterStartDate,
+        LastActivityDate = CASE 
+                            WHEN Target.LastActivityDate > Source.MaxPublishedDate THEN Target.LastActivityDate
+                            ELSE Source.MaxPublishedDate
+                          END,
+        IsActive = CASE 
+                    WHEN Target.IsActive = 1 THEN Target.IsActive 
+                    ELSE Source.IsActiveUser
+                  END
+-- If no match is found, insert a new row
+WHEN NOT MATCHED THEN
+    INSERT (UserID, ContributionPoint, ActiveContributionPoint, IsActive, LastActivityDate)
+    VALUES (Source.BloggerId, 
+            Source.PointsBeforeStartDate, 
+            Source.PointsAfterStartDate, 
+            Source.IsActiveUser, 
+            Source.MaxPublishedDate);
+
+-- Clean up temporary table
+DROP TABLE #TempUserPoints;
+GO
+----------------------------------------------------Ebook --------------------------------------------------
+DECLARE @StartDate DATETIME; 
+SET @StartDate = '2024-01-25 06:28:19.637'; 
+
+-- Get points for each contribution type
+WITH Points AS (
+    SELECT
+        ContributionType,
+        Points
+    FROM PointsAllocation (NOLOCK)
+),
+
+BeforeOrEqualStartDate AS (
+    SELECT 
+        LTRIM(RTRIM(value)) AS author_name,
+        COUNT(DISTINCT EbookID) AS BeforeOrEqualStartDateCount,
+        MAX(CreatedDate) AS LastCreatedDate
+    FROM 
+        EbookDetails (NOLOCK)
+        CROSS APPLY STRING_SPLIT(authors_unique_name, ',')
+    WHERE 
+        CreatedDate >= @StartDate 
+        AND IsActive = 1
+        AND authors_unique_name IS NOT NULL 
+        AND authors_unique_name != ''
+    GROUP BY 
+        LTRIM(RTRIM(value))
+),
+
+BeforeStartDate AS (
+    SELECT 
+        LTRIM(RTRIM(value)) AS author_name,
+        COUNT(DISTINCT EbookID) AS BeforeStartDateCount,
+        MAX(CreatedDate) AS LastCreatedDate
+    FROM 
+        EbookDetails (NOLOCK)
+        CROSS APPLY STRING_SPLIT(authors_unique_name, ',')
+    WHERE 
+        CreatedDate < @StartDate 
+        AND IsActive = 1
+        AND authors_unique_name IS NOT NULL 
+        AND authors_unique_name != ''
+    GROUP BY 
+        LTRIM(RTRIM(value))
+),
+
+-- Calculate the points for each author
+AuthorPoints AS (
+    SELECT
+        COALESCE(BeforeOrEqualStartDate.author_name, BeforeStartDate.author_name) AS author_name,
+        ISNULL(BeforeOrEqualStartDate.BeforeOrEqualStartDateCount, 0) AS BeforeOrEqualStartDateCount,
+        ISNULL(BeforeStartDate.BeforeStartDateCount, 0) AS BeforeStartDateCount,
+        COALESCE(BeforeOrEqualStartDate.LastCreatedDate, BeforeStartDate.LastCreatedDate) AS LastCreatedDate,
+        CASE 
+            WHEN COALESCE(BeforeOrEqualStartDate.LastCreatedDate, BeforeStartDate.LastCreatedDate) >= @StartDate THEN 1
+            ELSE 0 
+        END AS IsActiveUser
+    FROM 
+        BeforeOrEqualStartDate
+    FULL OUTER JOIN 
+        BeforeStartDate ON BeforeOrEqualStartDate.author_name = BeforeStartDate.author_name
+)
+
+-- Final query with points calculation
+SELECT
+    UR.UserID,
+	a.BeforeStartDateCount * (SELECT Points FROM Points WHERE ContributionType = 'Ebook') AS EarnedPointTypeCountBeforeStartDate_Counts,
+    a.IsActiveUser,
+    a.LastCreatedDate,
+    a.BeforeOrEqualStartDateCount * (SELECT Points FROM Points WHERE ContributionType = 'Ebook') AS earnedPointType_Before_or_Equal_StartDate_Counts
+    
+INTO #TempAuthorPoints -- Store the results into a temp table for use in MERGE
+FROM 
+    AuthorPoints a
+LEFT JOIN 
+    tblUser_Registration UR ON a.author_name = UR.unique_user_name;
+
+
+-- Now using MERGE to handle insert or update in UserContributionPointsForRedeem
+MERGE INTO UserContributionPointsForRedeem AS Target
+USING #TempAuthorPoints AS Source
+ON Target.UserID = Source.UserID -- Matching UserIDs
+
+-- If a match is found, perform an update
+WHEN MATCHED THEN
+    UPDATE SET 
+        ContributionPoint = ContributionPoint + Source.EarnedPointTypeCountBeforeStartDate_Counts, -- Update ContributionPoint with before start date points
+        ActiveContributionPoint = ActiveContributionPoint + Source.earnedPointType_Before_or_Equal_StartDate_Counts, -- Update ActiveContributionPoint with points after the start date
+        LastActivityDate = CASE 
+                            WHEN Target.LastActivityDate > Source.LastCreatedDate THEN Target.LastActivityDate
+                            ELSE Source.LastCreatedDate
+                          END,
+        IsActive = CASE 
+                    WHEN Target.IsActive = 1 THEN Target.IsActive 
+                    ELSE Source.IsActiveUser
+                  END
+-- If no match is found, insert a new row
+WHEN NOT MATCHED And Source.UserID is not null THEN
+    INSERT (UserID, ContributionPoint, ActiveContributionPoint, IsActive, LastActivityDate)
+    VALUES (Source.UserID, 
+            Source.EarnedPointTypeCountBeforeStartDate_Counts, 
+            Source.earnedPointType_Before_or_Equal_StartDate_Counts, 
+            Source.IsActiveUser, 
+            Source.LastCreatedDate);
+
+-- Clean up temporary table
+DROP TABLE #TempAuthorPoints;
+GO
+----------------------------------------------------------Event Speaking ---------------------------------------------
+DECLARE @StartDate DATETIME; 
+SET @StartDate = '2024-01-25 06:28:19.637'; 
+
+-- CTE for events on or after the start date
+WITH BeforeOrEqualStartDate AS (
+    SELECT 
+        EventID,
+        CASE 
+            WHEN LEFT(SpeakerUniqueNames , 1) = ',' 
+            THEN SUBSTRING(SpeakerUniqueNames , 2, LEN(SpeakerUniqueNames ) - 1)
+            ELSE SpeakerUniqueNames 
+        END AS CleanedSpeakerNames,
+        PostedDate
+    FROM 
+        EventDetails (NOLOCK)
+    WHERE 
+        PostedDate >= @StartDate  
+        AND IsActive = 1  
+        AND IsDeleted = 0 
+        AND SpeakerUniqueNames IS NOT NULL 
+        AND SpeakerUniqueNames != ''
+),
+SplitSpeakersBeforeOrEqual AS (
+    SELECT 
+        EventID,
+        PostedDate,
+        LTRIM(RTRIM(value)) AS SpeakerName
+    FROM 
+        BeforeOrEqualStartDate
+        CROSS APPLY STRING_SPLIT(CleanedSpeakerNames, ',')
+),
+CountBeforeOrEqual AS (
+    SELECT 
+        SpeakerName,
+        COUNT(DISTINCT EventID) AS BeforeOrEqualStartDateCount,
+        MAX(PostedDate) AS LastPostedDate
+    FROM 
+        SplitSpeakersBeforeOrEqual
+    GROUP BY 
+        SpeakerName
+),
+
+-- CTE for events before the start date
+BeforeStartDate AS (
+    SELECT 
+        EventID,
+        CASE 
+            WHEN LEFT(SpeakerUniqueNames , 1) = ',' 
+            THEN SUBSTRING(SpeakerUniqueNames , 2, LEN(SpeakerUniqueNames ) - 1)
+            ELSE SpeakerUniqueNames 
+        END AS CleanedSpeakerNames,
+        PostedDate
+    FROM 
+        EventDetails (NOLOCK)
+    WHERE 
+        PostedDate < @StartDate  
+        AND IsActive = 1  
+        AND IsDeleted = 0 
+        AND SpeakerUniqueNames IS NOT NULL 
+        AND SpeakerUniqueNames != ''
+),
+SplitSpeakersBefore AS (
+    SELECT 
+        EventID,
+        PostedDate,
+        LTRIM(RTRIM(value)) AS SpeakerName
+    FROM 
+        BeforeStartDate
+        CROSS APPLY STRING_SPLIT(CleanedSpeakerNames, ',')
+),
+CountBefore AS (
+    SELECT 
+        SpeakerName,
+        COUNT(DISTINCT EventID) AS BeforeStartDateCount,
+        MAX(PostedDate) AS LastPostedDate
+    FROM 
+        SplitSpeakersBefore
+    GROUP BY 
+        SpeakerName
+)
+
+-- Join with PointsAllocation to calculate earned points
+SELECT 
+    UR.UserID,
+	ISNULL(bs.BeforeStartDateCount * pa.Points, 0) AS EarnedPointTypeCountBeforeStartDate_Counts,
+    CASE 
+        WHEN bes.LastPostedDate IS NOT NULL AND bs.LastPostedDate IS NOT NULL 
+        THEN CASE 
+                WHEN bes.LastPostedDate >= @StartDate THEN bes.LastPostedDate
+                ELSE bs.LastPostedDate
+            END
+        WHEN bes.LastPostedDate IS NOT NULL THEN bes.LastPostedDate
+        WHEN bs.LastPostedDate IS NOT NULL THEN bs.LastPostedDate
+        ELSE NULL
+    END AS LastPostedDate,
+    CASE 
+        WHEN COALESCE(bes.LastPostedDate, bs.LastPostedDate) >= @StartDate THEN 1
+        ELSE 0
+    END AS IsActive,
+    ISNULL(bes.BeforeOrEqualStartDateCount * pa.Points, 0) AS EarnedPointType_Before_or_Equal_StartDate_Counts
+    
+INTO #TempSpeakerPoints -- Store the result in a temp table
+FROM 
+    CountBeforeOrEqual bes
+FULL OUTER JOIN 
+    CountBefore bs ON bes.SpeakerName = bs.SpeakerName
+LEFT JOIN 
+    tblUser_Registration UR ON COALESCE(bes.SpeakerName, bs.SpeakerName) = UR.unique_user_name
+LEFT JOIN 
+    PointsAllocation pa ON pa.ContributionType = 'Speaking'
+where UR.UserID IS NOT null AND UR.UserID != ''
+
+-- Now using MERGE to handle insert or update in UserContributionPointsForRedeem
+MERGE INTO UserContributionPointsForRedeem AS Target
+USING #TempSpeakerPoints AS Source
+ON Target.UserID = Source.UserID -- Matching UserIDs
+
+-- If a match is found, perform an update
+WHEN MATCHED THEN
+    UPDATE SET 
+        ContributionPoint = ContributionPoint + Source.EarnedPointTypeCountBeforeStartDate_Counts, -- Update ContributionPoint with points before start date
+        ActiveContributionPoint = ActiveContributionPoint + Source.EarnedPointType_Before_or_Equal_StartDate_Counts, -- Update ActiveContributionPoint with points after the start date
+        LastActivityDate = CASE 
+                            WHEN Target.LastActivityDate > Source.LastPostedDate THEN Target.LastActivityDate
+                            ELSE Source.LastPostedDate
+                          END,
+        IsActive = CASE 
+                    WHEN Target.IsActive = 1 THEN Target.IsActive 
+                    ELSE Source.IsActive
+                  END
+-- If no match is found, insert a new row
+WHEN NOT MATCHED THEN
+    INSERT (UserID, ContributionPoint, ActiveContributionPoint, IsActive, LastActivityDate)
+    VALUES (Source.UserID, 
+            Source.EarnedPointTypeCountBeforeStartDate_Counts, 
+            Source.EarnedPointType_Before_or_Equal_StartDate_Counts, 
+            Source.IsActive, 
+            Source.LastPostedDate);
+
+-- Clean up temporary table
+DROP TABLE #TempSpeakerPoints;
+GO
+------------------------------------------------------------------------Event Chapter Leader-------------------------------------------
+DECLARE @StartDate DATETIME; 
+SET @StartDate = '2024-01-25 06:28:19.637'; 
+
+-- CTE to get points for 'ChapterEvents'
+WITH PointsCTE AS (
+    SELECT Points
+    FROM PointsAllocation (NOLOCK)
+    WHERE ContributionType = 'ChapterEvents'
+),
+
+-- CTE for events on or after the start date
+BeforeOrEqualStartDate AS (
+    SELECT 
+        ChapterLeadID,
+        COUNT(1) AS BeforeOrEqualStartDateCount,
+        MAX(PostedDate) AS LastPostedDate
+    FROM 
+        EventDetails (NOLOCK)
+    WHERE 
+        PostedDate >= @StartDate  
+        AND IsActive = 1  
+        AND IsDeleted = 0 
+        AND ChapterLeadID IS NOT NULL
+        AND ChapterLeadID != ''
+    GROUP BY 
+        ChapterLeadID
+),
+
+-- CTE for events before the start date
+BeforeStartDate AS (
+    SELECT 
+        ChapterLeadID,
+        COUNT(1) AS BeforeStartDateCount,
+        MAX(PostedDate) AS LastPostedDate
+    FROM 
+        EventDetails (NOLOCK)
+    WHERE 
+        PostedDate < @StartDate  
+        AND IsActive = 1  
+        AND IsDeleted = 0 
+        AND ChapterLeadID IS NOT NULL
+        AND ChapterLeadID != ''
+    GROUP BY 
+        ChapterLeadID
+)
+
+-- Combine results into a temporary table
+SELECT 
+    COALESCE(bes.ChapterLeadID, bs.ChapterLeadID) AS ChapterLeadID,
+	ISNULL(bs.BeforeStartDateCount * (SELECT Points FROM PointsCTE), 0) AS EarnedPointTypeCountBeforeStartDate_Counts,
+    CASE 
+        WHEN bes.LastPostedDate IS NOT NULL AND bs.LastPostedDate IS NOT NULL 
+        THEN CASE 
+                WHEN bes.LastPostedDate >= @StartDate THEN bes.LastPostedDate
+                ELSE bs.LastPostedDate
+            END
+        WHEN bes.LastPostedDate IS NOT NULL THEN bes.LastPostedDate
+        WHEN bs.LastPostedDate IS NOT NULL THEN bs.LastPostedDate
+        ELSE NULL
+    END AS LastPostedDate,
+    CASE 
+        WHEN COALESCE(bes.LastPostedDate, bs.LastPostedDate) >= @StartDate THEN 1
+        ELSE 0
+    END AS IsActiveUser,
+    ISNULL(bes.BeforeOrEqualStartDateCount * (SELECT Points FROM PointsCTE), 0) AS EarnedPointType_Before_or_Equal_StartDate_Counts
+INTO #TempChapterEventPoints
+FROM 
+    BeforeOrEqualStartDate bes
+FULL OUTER JOIN 
+    BeforeStartDate bs ON bes.ChapterLeadID = bs.ChapterLeadID;
+
+-- Use MERGE to update or insert into the UserContributionPointsForRedeem table
+MERGE INTO UserContributionPointsForRedeem AS Target
+USING #TempChapterEventPoints AS Source
+ON Target.UserID = Source.ChapterLeadID -- Matching ChapterLeadID with UserID
+
+-- If a match is found, perform an update
+WHEN MATCHED THEN
+    UPDATE SET 
+        ContributionPoint = ContributionPoint + Source.EarnedPointTypeCountBeforeStartDate_Counts, -- Update ContributionPoint for events before the start date
+        ActiveContributionPoint = ActiveContributionPoint + Source.EarnedPointType_Before_or_Equal_StartDate_Counts, -- Update ActiveContributionPoint for events on or after the start date
+        LastActivityDate = CASE 
+                            WHEN Target.LastActivityDate > Source.LastPostedDate THEN Target.LastActivityDate
+                            ELSE Source.LastPostedDate
+                          END, -- Keep the latest date
+        IsActive = CASE 
+                    WHEN Target.IsActive = 1 THEN Target.IsActive 
+                    ELSE Source.IsActiveUser
+                  END -- Only update IsActive if it's not already 1
+-- If no match is found, insert a new row
+WHEN NOT MATCHED THEN
+    INSERT (UserID, ContributionPoint, ActiveContributionPoint, IsActive, LastActivityDate)
+    VALUES (Source.ChapterLeadID, 
+            Source.EarnedPointTypeCountBeforeStartDate_Counts, 
+            Source.EarnedPointType_Before_or_Equal_StartDate_Counts, 
+            Source.IsActiveUser, 
+            Source.LastPostedDate);
+
+-- Clean up the temporary table
+DROP TABLE #TempChapterEventPoints;
+GO
+----------------------------------------------------------- Member of the month--------------------------------------------------------
+DECLARE @StartDate DATETIME; 
+SET @StartDate = '2024-01-25 06:28:19.637'; 
+
+-- Get the points for 'MemberOfTheMonth' contribution type
+DECLARE @MemberOfTheMonthPoints INT;
+SELECT @MemberOfTheMonthPoints = Points
+FROM PointsAllocation (NOLOCK)
+WHERE ContributionType = 'MemberOfTheMonth';
+
+WITH AwardsOnOrAfterStartDate AS (
+    SELECT 
+        UserID,
+        COUNT(1) AS BeforeOrEqualStartDateCount,
+        MAX(AwardDate) AS LastDateOnOrAfter
+    FROM 
+        tbl_campaign_awards (NOLOCK)
+    WHERE 
+        AwardDate >= @StartDate
+        AND IsDeleted = 0
+    GROUP BY 
+        UserID
+),
+AwardsBeforeStartDate AS (
+    SELECT 
+        UserID,
+        COUNT(1) AS BeforeStartDateCount,
+        MAX(AwardDate) AS LastDateBefore
+    FROM 
+        tbl_campaign_awards (NOLOCK)
+    WHERE 
+        AwardDate < @StartDate
+        AND IsDeleted = 0
+    GROUP BY 
+        UserID
+)
+
+-- Combine the results in a temporary table
+SELECT 
+    COALESCE(a.UserID, b.UserID) AS UserID,
+    ISNULL(b.BeforeStartDateCount, 0) * @MemberOfTheMonthPoints AS EarnedPointTypeCountBeforeStartDate_Counts,
+    CASE 
+        WHEN MAX(COALESCE(a.LastDateOnOrAfter, b.LastDateBefore)) >= @StartDate THEN 1 
+        ELSE 0 
+    END AS IsActiveUser,
+    FORMAT(MAX(COALESCE(a.LastDateOnOrAfter, b.LastDateBefore)), 'yyyy-MM-dd HH:mm:ss.fff') AS LastDate,
+    ISNULL(a.BeforeOrEqualStartDateCount, 0) * @MemberOfTheMonthPoints AS earnedPointType_Before_or_Equal_StartDate_Counts
+INTO #TempMemberOfTheMonthPoints
+FROM 
+    AwardsOnOrAfterStartDate a
+FULL OUTER JOIN 
+    AwardsBeforeStartDate b ON a.UserID = b.UserID
+GROUP BY 
+    COALESCE(a.UserID, b.UserID),
+    ISNULL(a.BeforeOrEqualStartDateCount, 0),
+    ISNULL(b.BeforeStartDateCount, 0);
+
+-- Use MERGE to update or insert into UserContributionPointsForRedeem
+MERGE INTO UserContributionPointsForRedeem AS Target
+USING #TempMemberOfTheMonthPoints AS Source
+ON Target.UserID = Source.UserID -- Match on UserID
+
+-- If a match is found, update the existing row
+WHEN MATCHED THEN
+    UPDATE SET 
+        ContributionPoint = ContributionPoint + Source.EarnedPointTypeCountBeforeStartDate_Counts, -- Update points before start date
+        ActiveContributionPoint = ActiveContributionPoint + Source.earnedPointType_Before_or_Equal_StartDate_Counts, -- Update active points on or after start date
+        LastActivityDate = CASE 
+                            WHEN Target.LastActivityDate > Source.LastDate THEN Target.LastActivityDate
+                            ELSE Source.LastDate
+                          END, -- Update LastActivityDate only if the source date is later
+        IsActive = CASE 
+                    WHEN Target.IsActive = 1 THEN Target.IsActive 
+                    ELSE Source.IsActiveUser
+                  END -- Keep IsActive as 1 if it's already 1
+
+-- If no match is found, insert a new row
+WHEN NOT MATCHED THEN
+    INSERT (UserID, ContributionPoint, ActiveContributionPoint, IsActive, LastActivityDate)
+    VALUES (Source.UserID, 
+            Source.EarnedPointTypeCountBeforeStartDate_Counts, 
+            Source.earnedPointType_Before_or_Equal_StartDate_Counts, 
+            Source.IsActiveUser, 
+            Source.LastDate);
+
+-- Clean up temporary table
+DROP TABLE #TempMemberOfTheMonthPoints;
+GO
+-------------------------------------------------------Onboarding --------------------------------------------------------------
+DECLARE @StartDate DATETIME; 
+SET @StartDate = '2024-01-25 06:28:19.637'; 
+
+-- Retrieve points for the contribution type 'Onboarding'
+DECLARE @OnboardingPoints INT;
+SELECT @OnboardingPoints = Points
+FROM PointsAllocation (NOLOCK)
+WHERE ContributionType = 'Onboarding';
+
+WITH OnboardingAfterStartDate AS (
+    SELECT 
+        UserID, 
+        MAX(LEN(ValueSubmittedSteps) - LEN(REPLACE(ValueSubmittedSteps, ',', '')) + 1) AS CompletedStepsAfterStartDate,
+        MAX(CreatedDate) AS CreatedDateAfterStartDate
+    FROM 
+        tblUser_Onboarding (NOLOCK)
+    WHERE 
+        CreatedDate >= @StartDate
+        AND IsOnboardingDone = 1
+        AND IsActive = 1
+        AND UserID IS NOT NULL
+        AND UserID != ''
+		AND ValueSubmittedSteps IS not null
+    GROUP BY 
+        UserID
+),
+OnboardingBeforeStartDate AS (
+    SELECT 
+        UserID, 
+        MAX(LEN(ValueSubmittedSteps) - LEN(REPLACE(ValueSubmittedSteps, ',', '')) + 1) AS CompletedStepsBeforeStartDate,
+        MAX(CreatedDate) AS CreatedDateBeforeStartDate
+    FROM 
+        tblUser_Onboarding (NOLOCK)
+    WHERE 
+        CreatedDate < @StartDate
+        AND IsOnboardingDone = 1
+        AND IsActive = 1
+        AND UserID IS NOT NULL
+        AND UserID != ''
+		AND ValueSubmittedSteps IS not null
+    GROUP BY 
+        UserID
+)
+
+-- Combine results in a temporary table
+SELECT 
+    COALESCE(a.UserID, b.UserID) AS UserID,
+    ISNULL(a.CompletedStepsAfterStartDate, 0) AS CompletedStepsAfterStartDate,
+    ISNULL(b.CompletedStepsBeforeStartDate, 0) AS CompletedStepsBeforeStartDate,
+    FORMAT(MAX(COALESCE(a.CreatedDateAfterStartDate, b.CreatedDateBeforeStartDate)), 'yyyy-MM-dd HH:mm:ss.fff') AS CreatedDate,
+    CASE 
+        WHEN MAX(COALESCE(a.CreatedDateAfterStartDate, b.CreatedDateBeforeStartDate)) >= @StartDate THEN 1
+        ELSE 0
+    END AS IsActiveUser,
+    ISNULL(a.CompletedStepsAfterStartDate, 0) * @OnboardingPoints AS earnedPointType_Before_or_Equal_StartDate_Counts,
+    ISNULL(b.CompletedStepsBeforeStartDate, 0) * @OnboardingPoints AS EarnedPointTypeCountBeforeStartDate_Counts
+INTO #TempOnboardingPoints
+FROM 
+    OnboardingAfterStartDate a
+FULL OUTER JOIN 
+    OnboardingBeforeStartDate b ON a.UserID = b.UserID
+GROUP BY 
+    COALESCE(a.UserID, b.UserID),
+    ISNULL(a.CompletedStepsAfterStartDate, 0),
+    ISNULL(b.CompletedStepsBeforeStartDate, 0);
+
+-- Use MERGE to update or insert into UserContributionPointsForRedeem
+MERGE INTO UserContributionPointsForRedeem AS Target
+USING #TempOnboardingPoints AS Source
+ON Target.UserID = Source.UserID -- Match on UserID
+
+-- If a match is found, update the existing row
+WHEN MATCHED THEN
+    UPDATE SET 
+        ContributionPoint = ContributionPoint + Source.EarnedPointTypeCountBeforeStartDate_Counts, -- Add points before the start date
+        ActiveContributionPoint = ActiveContributionPoint + Source.earnedPointType_Before_or_Equal_StartDate_Counts, -- Add active points on or after start date
+        LastActivityDate = CASE 
+                            WHEN Target.LastActivityDate > Source.CreatedDate THEN Target.LastActivityDate
+                            ELSE Source.CreatedDate
+                          END, -- Update LastActivityDate if the source date is more recent
+        IsActive = CASE 
+                    WHEN Target.IsActive = 1 THEN Target.IsActive 
+                    ELSE Source.IsActiveUser
+                  END -- Keep IsActive as 1 if it's already 1
+
+-- If no match is found, insert a new row
+WHEN NOT MATCHED THEN
+    INSERT (UserID, ContributionPoint, ActiveContributionPoint, IsActive, LastActivityDate)
+    VALUES (Source.UserID, 
+            Source.EarnedPointTypeCountBeforeStartDate_Counts, 
+            Source.earnedPointType_Before_or_Equal_StartDate_Counts, 
+            Source.IsActiveUser, 
+            Source.CreatedDate);
+
+-- Clean up the temporary table
+DROP TABLE #TempOnboardingPoints;
+GO
+
+------------------------------------------------------MVP ---------------------------------------------------
+DECLARE @StartDate DATETIME; 
+SET @StartDate = '2024-01-25 06:28:19.637';
+
+-- Fetch the Points for the 'MVP' ContributionType
+DECLARE @MVPPoints INT;
+SELECT @MVPPoints = Points
+FROM PointsAllocation (NOLOCK)
+WHERE ContributionType = 'MVP';
+
+-- Main query to calculate points
+WITH MVPPointsCalculation AS (
+    SELECT 
+        UserID,
+        SUM(CASE WHEN FromDate < @StartDate THEN 1 ELSE 0 END) * @MVPPoints AS EarnedPointTypeCountBeforeStartDate_Counts,
+        CASE 
+            WHEN MAX(FromDate) >= @StartDate THEN 1 
+            ELSE 0 
+        END AS IsActiveUser,
+        MAX(FromDate) AS LastContributeDate,
+        SUM(CASE WHEN FromDate >= @StartDate THEN 1 ELSE 0 END) * @MVPPoints AS earnedPointType_Before_or_Equal_StartDate_Counts
+    FROM 
+        tbl_AwardedMVP
+    GROUP BY 
+        UserID
+)
+
+-- Use MERGE to update or insert into UserContributionPointsForRedeem
+MERGE INTO UserContributionPointsForRedeem AS Target
+USING MVPPointsCalculation AS Source
+ON Target.UserID = Source.UserID -- Match on UserID
+
+-- If a match is found, update the existing row
+WHEN MATCHED THEN
+    UPDATE SET 
+        ContributionPoint = ContributionPoint + Source.EarnedPointTypeCountBeforeStartDate_Counts, -- Add points before the start date
+        ActiveContributionPoint = ActiveContributionPoint + Source.earnedPointType_Before_or_Equal_StartDate_Counts, -- Add active points on or after start date
+        LastActivityDate = CASE 
+                            WHEN Target.LastActivityDate > Source.LastContributeDate THEN Target.LastActivityDate
+                            ELSE Source.LastContributeDate
+                          END, -- Update LastActivityDate if the source date is more recent
+        IsActive = CASE 
+                    WHEN Target.IsActive = 1 THEN Target.IsActive 
+                    ELSE Source.IsActiveUser
+                  END -- Keep IsActive as 1 if it's already 1
+
+-- If no match is found, insert a new row
+WHEN NOT MATCHED THEN
+    INSERT (UserID, ContributionPoint, ActiveContributionPoint, IsActive, LastActivityDate)
+    VALUES (Source.UserID, 
+            Source.EarnedPointTypeCountBeforeStartDate_Counts, 
+            Source.earnedPointType_Before_or_Equal_StartDate_Counts, 
+            Source.IsActiveUser, 
+            Source.LastContributeDate);
+
+
+---------------------------------------------------------------------------------------------------------------------------

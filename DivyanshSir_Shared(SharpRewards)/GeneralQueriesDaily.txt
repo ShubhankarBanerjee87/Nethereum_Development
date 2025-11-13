@@ -1,0 +1,251 @@
+------------------------Wallet Creation between date Range ----------------------------------
+SELECT U.FullName, UW.WalletAddress, DATEADD(MINUTE,330, UW.CreatedDate ) CreatedDate
+FROM UserWallet AS UW
+LEFT JOIN [User] AS U ON UW.Id = U.UserWalletId
+WHERE DATEADD(MINUTE, 330, UW.CreatedDate) BETWEEN '2024-08-21' AND '2024-08-28';
+
+
+-----------------------Token Allocation for a specific Date ------------------------------------
+SELECT 
+    CAST(CreatedDate AS DATE) AS DateOnly, 
+    SUM(TokenAllocation) AS TotalTokenAllocation
+FROM TokenTransaction 
+WHERE TransactionStatus = 1 
+  AND IsProcessing = 1 
+  AND TransactionTypeId = 11
+GROUP BY CAST(CreatedDate AS DATE)
+ORDER BY DateOnly DESC;
+
+
+-----------------------Wallet Creation for iOS and android---------------------------------------
+select 
+	CAST(CreatedDate AS DATE) AS DateOnly,
+	COUNT(*) AS TotalCount
+	from UserWallet
+	where DeviceType = 'android'
+Group BY CAST(CreatedDate As DATE)
+ORDER BY DateOnly DESC; 
+
+---------------------User Time Zone Update ---------------------------------------------------------
+select 
+UW.WalletAddress,
+TH.TotalToken,
+DI.FullName,
+DI.TimeZoneOffset,
+DI.TimeZoneOffsetName,
+UW.CreatedDate AS WalletCreatedDate,
+UW.CreatedDate AS WalletCreatedDate,
+DI.CreatedDate,
+D.DeviceId,
+D.DeviceType,
+D.DeviceVersion,
+D.BuildVersion,
+D.AppVersion
+from [User] DI
+JOIN UserWallet UW ON DI.UserWalletId=UW.Id
+JOIN DevicesInfo D ON DI.UserWalletId=D.UserWalletId
+JOIN TokenHolder TH ON DI.UserWalletId = TH.UserWalletId
+--where UW.WalletAddress='0x0CB295057ca5aa8F5f59B297bEF9fA085Fdb6bb0'
+order by DI.CreatedDate 
+
+
+
+-------------------------------------------------
+select UW.WalletAddress , TT.TokenAllocation
+	from TokenTransaction AS TT
+	LEFT JOIN UserWallet AS UW ON TT.UserWalletId = UW.Id
+	where CAST(TT.CreatedDate AS DATE) = '2024-08-30'
+	AND TT.TransactionStatus = 1 
+	AND TT.IsProcessing = 1 
+	AND TT.TransactionTypeId IN (8,9,10)
+	
+----------------------------------------------Missing Nonce Check ------------------------------
+
+WITH NumberSequence AS (
+    SELECT 590 AS Number
+    UNION ALL
+    SELECT Number + 1
+    FROM NumberSequence
+    WHERE Number < 2770
+),
+MissingNumbers AS (
+    SELECT ns.Number
+    FROM NumberSequence ns
+    LEFT JOIN BatchTransactionDetail nt ON ns.Number = nt.Nonce
+    WHERE nt.Nonce IS NULL
+)
+
+SELECT Number
+FROM MissingNumbers
+ORDER BY Number Desc
+OPTION (MAXRECURSION 0);
+
+
+------------------------------------ HIGHEST CPU USAGES ----------------------------------------
+
+SELECT TOP 20
+ ObjectName                 = OBJECT_SCHEMA_NAME(qt.objectid,DBID) + '.' + OBJECT_NAME(qt.objectid, qt.DBID)
+,StatementText = SUBSTRING(qt.TEXT, (QS.statement_start_offset/2) + 1,
+    ((CASE statement_end_offset
+        WHEN -1 THEN DATALENGTH(qt.TEXT)
+        ELSE QS.statement_end_offset END
+            - QS.statement_start_offset)/2) + 1) 
+---- Query within the proc
+ 
+,TextData                   = qt.TEXT 
+---- The SQL Text that was executed
+ 
+,DiskReads                  = qs.total_physical_reads 
+---- The worst reads, disk reads
+ 
+,MemoryReads                = qs.total_logical_reads 
+---- Logical Reads are memory reads
+ 
+,Executions                 = qs.execution_count 
+---- the counts of the query being executed since reboot
+ 
+,TotalCPUTime_ms            = qs.total_worker_time/1000 
+---- The CPU time that the query consumes
+ 
+,AverageCPUTime_ms          = qs.total_worker_time/(1000*qs.execution_count) 
+---- the Average CPU Time for the query
+ 
+,AvgDiskWaitAndCPUTime_ms   = qs.total_elapsed_time/(1000*qs.execution_count) 
+---- the average duration to execute the plan - CPU and Disk
+ 
+,MemoryWrites               = qs.max_logical_writes
+,DateCached                 = qs.creation_time
+,DatabaseName               = DB_Name(qt.DBID)
+,LastExecutionTime          = qs.last_execution_time
+FROM sys.dm_exec_query_stats AS qs
+CROSS APPLY sys.dm_exec_sql_text(qs.SQL_HANDLE) AS qt
+WHERE DB_Name(qt.dbid) = 'walletdb'
+----connect and give your db name here (cross db works fine in on-premises and not works on Azure)
+--ORDER BY qs.total_worker_time DESC 
+---- (Most CPU usage = Worst performing CPU bound queries)
+--ORDER BY qs.total_worker_time/qs.execution_count DESC 
+---- highest average CPU usage
+--ORDER BY qs.total_elapsed_time/(1000*qs.execution_count) DESC 
+---- highest average w/ wait time
+ORDER BY total_logical_reads DESC
+---- (Memory Reads = Worst performing I/O bound queries)
+
+
+
+-------------------------------------------------User Data-------------------------------------------------------------
+
+SELECT 
+    UW.WalletAddress, 
+    D.DeviceType, 
+    D.AppVersion, 
+    D.UpdatedDate, 
+    D.DeviceVersion, 
+    D.DeviceModel,
+	D.CreatedBy,
+	D.DeviceId,
+	UW.WalletUniqueName,
+    TT.LatestTransactionDate
+FROM 
+    DevicesInfo AS D
+LEFT JOIN 
+    UserWallet UW ON D.UserWalletId = UW.Id
+LEFT JOIN 
+    (
+        SELECT 
+            UserWalletId, 
+            MAX(CreatedDate) AS LatestTransactionDate
+        FROM 
+            TokenTransaction
+		WHERE TransactionTypeId = 1
+        GROUP BY 
+            UserWalletId
+    ) AS TT ON UW.Id = TT.UserWalletId
+WHERE 
+    D.IsActive = 1
+ORDER BY 
+    D.UpdatedDate DESC;
+
+----------------------------------------------SP Change log------------------------------------------------
+
+DECLARE @lastDate DATE = '2018-08-28' -- change the date to last deployment date
+
+SELECT name,type, (CASE WHEN @lastdate<=create_date THEN 'new' ELSE 'old' end) AS Status 
+FROM sys.objects 
+WHERE CAST(modify_date AS DATE)>=@lastDate 
+AND type IN ('v','p','u','fn','tr') 
+AND name NOT LIKE '%DNH_JOB%' 
+AND name NOT LIKE 'api_%' 
+ORDER BY type, Status
+
+------------------------------------------SP Schema ------------------------------------------------------------
+DECLARE @SPs TABLE
+    (
+       spname VARCHAR(max)
+    )
+
+   INSERT INTO @SPs
+  VALUES
+('UpcomingEventsForXML'),
+('Getblogdetail'),
+('Resource_SelectByResourceId'),
+('cs_GetArticleHeaderDetail'),
+('GetVideoHeaderDetail'),
+('GetArticleHistory'),
+('GetContentHistory'),
+('service_GetcategoryWiseData'),
+('GetAboutUsMembers'),
+('MembershipUpdateForumCommentCountForUpdate');
+
+DECLARE @t VARCHAR(MAX);
+SET @t = '';
+SELECT  @t = @t
+        + CASE WHEN ( EXISTS ( SELECT   *
+                               FROM     sys.objects
+                               WHERE    sys.objects.object_id = sm.object_id ) )
+               THEN 'DROP ' + CASE WHEN SO.type = 'FN' THEN 'FUNCTION'
+                                   WHEN SO.type = 'P' THEN 'PROCEDURE'
+                                   WHEN SO.type = 'TR' THEN 'TRIGGER'
+                                   WHEN SO.type = 'V' THEN 'VIEW'
+                              END + ' ' + TL.spname + '; 
+
+GO 
+'
+          END + definition + ' 
+
+GO
+'
+FROM    @SPs TL
+        LEFT JOIN [sys].[sql_modules] SM ON OBJECT_ID(TL.SpName) = SM.object_id
+        LEFT JOIN sys.objects SO ON TL.SpName = SO.name
+        WHERE SM.object_id IS NOT null;
+
+/*Stops the long text from getting truncated in SSMS*/
+SELECT  @t AS [processing-instruction(x)]
+FOR     XML PATH('');
+
+
+
+--------------------------------------------TABLE Rename and create new schema----------------------------------------------
+
+EXEC sp_rename 'EmailNotification', 'EmailNotification_Archive_12Feb2025';
+
+SELECT * INTO EmailNotification 
+FROM EmailNotification_Archive_12Feb2025 
+WHERE 1 = 0; 
+
+------------------------------------------------------GET Referral detail-----------------------------------------------------------------------
+
+SELECT 
+    UR.FromUserId, 
+    UW.WalletAddress, 
+    U.FullName, 
+    COUNT(1) AS ReferralCount 
+FROM UserReferral UR
+JOIN UserWallet UW ON UR.FromUserId = UW.Id
+JOIN [User] U ON UR.FromUserId = U.UserWalletId
+WHERE UR.FromUserId IS NOT NULL 
+    AND UR.IsUsed = 1 
+    --AND UR.UpdatedDate BETWEEN '2025-02-17 00:00:00' AND '2025-02-23 23:59:59'
+GROUP BY UR.FromUserId, UW.WalletAddress, U.FullName
+ORDER BY ReferralCount DESC;
+----------------------------------------------------------------------------------------------------------------------------

@@ -1,0 +1,135 @@
+	SP Created
+===============================================================
+1. CalcAndUpdateUserActivePoints
+	- SP to calculate the user points on the basis of active and previous points and update in UserContributionPointsForRedeem table
+2. CheckIsUserActiveForSixMonth
+	- SP to check user activity for six months and change the activity status, lastinactivedate if is inactive
+3. DumpDataToArcheiveTable
+	- SP to dump data of UserContributionPoint into Archive_UserContributionActivity_Data table to keep archive for future use.
+===============================================================
+ 
+
+
+
+	Triggers Modifed
+=================================================================
+1. DNH_Trigger_ChapterLeaderMemberRankingCounts_add_update
+2. DNH_Trigger_ChapterLeaderMemberRankingCounts_add
+3. DNH_Trigger_ChapterEventCountMemberRankingCounts_delete
+4. DNH_Trigger_EventSpeakersMemberRankingCounts_add_update
+5. DNH_Trigger_EventSpeakersMemberRankingCounts_delete
+6. MembershipUpdateArticleCountForUpdate
+7. MembershipUpdateBlogCountForUpdate
+8. DNH_Trigger_EbookDetailsMemberRankingCounts_add
+9. DNH_Trigger_EBookDetailsMemberRankingCounts_delete
+10. DNH_Trigger_EbookDetailsMemberRankingCounts_Update
+11. MembershipUpdateOnMemberOfTheMonth_Insert
+12. MembershipUpdateOnMemberOfTheMonth_Delete
+13. MembershipUpdateForUpdateMVP_Insert
+==========================================================
+
+
+
+
+	Stored Procedures Modified
+=======================================================
+1. DNH_EbookDetailsMemberRankingCounts_add
+2. OB_Followers_AddFollowers_New
+3. UpdateOnboardingWalletStatus
+4. API_V1_Designation_Update_Wallet
+5. FollowUnfollowCategory_New
+6. UserContributionActivity
+7. MemberRankgingCount_UpdateFeaturedArticleCount
+8. MemberRankgingCount_UpdateFeaturedArticleCount
+===========================================================
+
+
+
+
+	UserContributionActivity Table Schema
+======================================================
+CREATE TABLE UserContributionActivity
+(
+	Id BIGINT IDENTITY(1,1) NOT NULL,
+	UserID VARCHAR(50) NOT NULL,
+	ContentType INT NOT NULL,
+	ContentID VARCHAR(200),
+	ContentCreatedDate DATETIME,
+	Status INT NOT NULL,
+	CreatedDate DATETIME DEFAULT GETUTCDATE(),
+	PRIMARY KEY(Id)
+);
+
+
+Here UserContributionActivity data of every user is inserted
+Status : 1 - content approved/accepted
+   	 2 - content on edit
+	 3 - content deleted
+ContentCreatedDate : Is the date when the content was first created
+Content Type : 	1 - for article
+	       	3 - video
+	       	4 - blog
+	       35 - Speaking
+		6 - Chapter Events
+	       13 - Ebook
+	       31 - Onboarding
+	       27 - Member Of the Month
+	       29 - MVP
+==============================================================
+
+
+
+
+
+
+Schema for archive table Archive_UserContributionActivity_Data
+==============================================================
+CREATE TABLE Archive_UserContributionActivity_Data
+(
+	Id BIGINT NOT NULL,
+	UserID VARCHAR(50) NOT NULL,
+	ContentType INT NOT NULL,
+	ContentID VARCHAR(200),
+	ContentCreatedDate DATETIME,
+	Status INT NOT NULL,
+	CreatedDate DATETIME,
+	PRIMARY KEY(Id)
+);
+
+This table's schema is similar to UserContributionActivity but Id 
+as primary key and default from CreatedDate are removed to dump all 
+the data.
+
+
+
+
+
+
+
+	Schema for Job tracking table
+==============================================================
+Table creation , insertion and deletion querry for job tracking table that will keep track of the job
+
+CREATE TABLE UserContributionActivityJobTracking (
+    JobName NVARCHAR(100),
+    LastProcessedID BIGINT,
+    PRIMARY KEY (JobName)
+);
+
+This is the table to keep track of the last processed id for the job
+----------------------------------------------------------------
+
+INSERT INTO UserContributionActivityJobTracking (JobName, LastProcessedID) 
+VALUES ('UserContributionActivityJob', 0);  					-- Assuming 0 for the initial start
+
+INSERT INTO UserContributionActivityJobTracking(JobName,LastProcessedID) 
+VALUES ('ArchiveDataOfUserContributionActivityJob',0);				-- Assuming 0 for the intital start
+
+Insert the initial row to track the job
+the first entry is of LastProcessedID as 0 along with JobName as "UserContributionActivityJob"
+
+Insert the initial row to keep track of the maximum Id that has been inserted into archive table, 
+so that Ids after that can be inserted in the next run
+
+================================================================
+****************************************************************
